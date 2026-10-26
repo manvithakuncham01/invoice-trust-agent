@@ -89,24 +89,13 @@ scripts/             Local setup helper
 docs/                Acceptance checklist and next steps
 ```
 
-## GitHub — publish yourself later
-
-If this folder is not already a Git repository:
+## Get the code from GitHub
 
 ```bash
-git init -b main
-git add .
-git status
+git clone https://github.com/manvithakuncham01/invoice-trust-agent.git
+cd invoice-trust-agent
+bash scripts/setup-local.sh
 ```
 
-Review the staged filenames first; `.env`, database, `.venv` and `node_modules` must be excluded. Then:
-
-```bash
-git commit -m "Set up ITA-02 Python backend and frontend shell"
-git remote add origin https://github.com/YOUR_USERNAME/invoice-trust-agent.git
-git push -u origin main
-```
-
-These commands assume a new empty remote. If GitHub already has a README or commits, clone that repository separately and copy these project files into it, then commit normally. Do not force-push to resolve unrelated history. This setup has not created a GitHub repository or pushed anything.
-
+Then run the backend and frontend in separate terminals as described above.
 See `docs/NEXT-STEPS.md` for ITA-03 onward.
