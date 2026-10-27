@@ -7,10 +7,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import text
+from sqlalchemy import text, select
 from sqlalchemy.exc import SQLAlchemyError
 from .db import build_engine, build_session_factory
-from .models import SessionRecord, User
+from .models import SessionRecord, User, InvoiceCase, InvoiceVersion
+from .invoices import install_invoice_routes
 from .seed import DEMO_USERS
 from .settings import Settings, get_settings
 
@@ -56,7 +57,7 @@ def create_app(settings: Settings | None = None, engine=None):
     app.state.engine = engine or build_engine(config.database_url)
     app.state.session_factory = build_session_factory(app.state.engine)
     app.add_middleware(CORSMiddleware, allow_origins=config.allowed_origins, allow_credentials=True,
-                       allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["Content-Type", "X-CSRF-Token"])
+                       allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["Content-Type", "X-CSRF-Token", "Idempotency-Key"])
 
     @app.exception_handler(HTTPException)
     async def http_error(request, exc):
@@ -66,7 +67,17 @@ def create_app(settings: Settings | None = None, engine=None):
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, exc):
         # Do not return input values or credentials from validation failures.
-        return error_response("VALIDATION_ERROR", "Check the request fields and allowed identity.", 422)
+        fields = {}
+        for error in exc.errors():
+            location = '.'.join(str(x) for x in error['loc'] if x != 'body')
+            leaf = str(error['loc'][-1])
+            messages = {'buyer_email':'Enter a valid buyer email.', 'name':'Enter an item name up to 200 characters.',
+                        'quantity':'Quantity must be a whole number greater than zero (maximum 1,000,000).',
+                        'unit_price':'Enter a positive price with up to two decimal places (maximum 999,999,999.99).',
+                        'currency':'Only USD is supported.', 'description':'Use 2,000 characters or fewer.',
+                        'note':'Use 2,000 characters or fewer.', 'items':'Add between 1 and 100 items.'}
+            fields[location] = 'Unexpected field.' if error['type']=='extra_forbidden' else messages.get(leaf,'Check this field.')
+        return JSONResponse({'error': {'code':'VALIDATION_ERROR','message':'Check the highlighted fields.','fields':fields}}, status_code=422)
 
     @app.middleware("http")
     async def security_boundary(request: Request, call_next):
@@ -104,6 +115,7 @@ def create_app(settings: Settings | None = None, engine=None):
                 conn.execute(text("SELECT 1"))
                 conn.execute(text("SELECT id FROM users LIMIT 1"))
                 conn.execute(text("SELECT token_hash FROM sessions LIMIT 1"))
+                conn.execute(text("SELECT case_id FROM invoice_versions LIMIT 1"))
             return {"status": "ready", "database": "available", "llm_provider": config.llm_provider}
         except SQLAlchemyError:
             return error_response("NOT_READY", "Database is unavailable or migrations are missing.", 503)
@@ -154,7 +166,10 @@ def create_app(settings: Settings | None = None, engine=None):
 
     @app.get("/api/seller/workspace")
     def seller_workspace(data=Depends(require_role("SELLER"))):
-        return {"user": public_user(data[1]), "invoices": [], "message": "No invoice features implemented yet. ITA-03 is next."}
+        with app.state.session_factory() as db:
+            cases = db.scalars(select(InvoiceCase).where(InvoiceCase.seller_id == data[1].seller_id).order_by(InvoiceCase.created_at.desc())).all()
+            invoices = [dict(db.get(InvoiceVersion, (c.id,c.current_version)).payload, case_id=c.id, review_status=c.review_state) for c in cases]
+        return {'user':public_user(data[1]),'invoices':invoices}
 
     @app.get("/api/reviewer/workspace")
     def reviewer_workspace(data=Depends(require_role("REVIEWER"))):
@@ -164,6 +179,7 @@ def create_app(settings: Settings | None = None, engine=None):
     def buyer_workspace(data=Depends(require_role("BUYER"))):
         return {"user": public_user(data[1]), "message": "Demo buyer shell only. Email verification and case-scoped access are planned for ITA-09."}
 
+    install_invoice_routes(app, require_role("SELLER"))
     return app
 
 app = create_app()

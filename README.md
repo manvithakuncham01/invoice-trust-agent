@@ -1,7 +1,7 @@
-# Invoice Trust Agent — ITA-02 starter
+# Invoice Trust Agent — ITA-03 invoice drafts
 
 Python/FastAPI backend and Vue/JavaScript app shell for pre-send invoice review.
-**Foundation only:** no invoice business endpoints, live agent, RAG, PayPal calls or real payments yet.
+**Implemented:** seller invoice form, editable preview, exact totals, local draft saving and seller-owned draft retrieval. Live agent, RAG, PayPal integration and real payments remain later stories.
 
 ## Requirements
 
@@ -99,3 +99,18 @@ bash scripts/setup-local.sh
 
 Then run the backend and frontend in separate terminals as described above.
 See `docs/NEXT-STEPS.md` for ITA-03 onward.
+
+## ITA-03 — invoice drafts
+
+After selecting a seller demo identity, click **New invoice**. Add buyer email, one or more USD line items and an optional note. Preview, go back to edit, then save. The saved draft detail can be reopened from the seller workspace or its URL. A draft is local and unsent; saving does not invoke PayPal or the agent.
+
+Existing checkouts: install updated backend requirements and run `alembic upgrade head` from `backend` before starting the server. Run `npm ci` from `frontend` for the new test dependency.
+
+- `POST /api/invoices`: requires seller session, CSRF header and a unique `Idempotency-Key`. Returns 201 for a new draft, 200 for an identical retry, 409 if the key is reused with different details.
+- `GET /api/invoices/{case_id}`: owner-only immutable version 1; other sellers receive 404.
+- `GET /api/seller/workspace`: seller-owned invoice summaries.
+- Monetary input uses decimal strings; backend totals use Decimal. UI preview uses integer cents with BigInt. Backend is authoritative.
+- App limits: 100 items, quantity 1–1,000,000, positive unit price at most 999,999,999.99. These are prototype limits, not PayPal limits.
+- Frontend component tests: `cd frontend && npm test`. Backend tests: `cd backend && python -m pytest`.
+
+See `docs/ITA-03-acceptance.md` for manual QA.

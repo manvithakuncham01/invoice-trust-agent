@@ -1,14 +1,17 @@
 import { createApp, ref, onMounted, computed } from 'vue/dist/vue.esm-bundler.js'
 import './style.css'
+import { InvoiceDraft } from './InvoiceDraft.js'
 
 const App = {
+  components: {InvoiceDraft},
   setup() {
     const config = ref(null), users = ref([]), user = ref(null), csrf = ref('')
     const loading = ref(true), busy = ref(false), error = ref(''), data = ref(null)
     const path = ref(window.location.pathname)
     const selected = ref('seller-a')
     const known = ['/','/seller','/reviewer','/buyer']
-    const requiredRole = computed(() => ({ '/seller':'SELLER', '/reviewer':'REVIEWER', '/buyer':'BUYER' }[path.value]))
+    const requiredRole = computed(() => path.value.startsWith('/seller/invoices/') ? 'SELLER' : ({ '/seller':'SELLER', '/reviewer':'REVIEWER', '/buyer':'BUYER' }[path.value]))
+    const knownPath = computed(() => known.includes(path.value) || /^\/seller\/invoices\/(new|[0-9a-f-]{36})$/.test(path.value))
     const forbidden = computed(() => user.value && requiredRole.value && user.value.role !== requiredRole.value)
     async function api(url, options = {}) {
       const response = await fetch(url, { credentials:'same-origin', ...options,
@@ -16,13 +19,13 @@ const App = {
       const result = response.status === 204 ? null : await response.json()
       if (!response.ok) {
         const err = new Error(result?.error?.message || 'Request failed. Please retry.')
-        err.status = response.status; throw err
+        err.status = response.status; err.fields=result?.error?.fields; throw err
       }
       return result
     }
     async function loadWorkspace() {
       data.value = null
-      if (!user.value || forbidden.value || !requiredRole.value) return
+      if (!user.value || forbidden.value || !requiredRole.value || path.value.startsWith('/seller/invoices/')) return
       data.value = await api('/api'+path.value+'/workspace')
     }
     async function navigate(next) {
@@ -55,7 +58,7 @@ const App = {
       finally {loading.value=false}
     }
     onMounted(initialize)
-    return {config,users,user,loading,busy,error,data,path,selected,known,forbidden,requiredRole,navigate,signIn,logout,initialize}
+    return {config,users,user,loading,busy,error,data,path,selected,known,forbidden,requiredRole,navigate,signIn,logout,initialize,api,knownPath}
   },
   template: `
   <div class="layout">
@@ -71,7 +74,7 @@ const App = {
       <p class="aside-note">Review before sending.<br>Pay through PayPal.</p>
     </aside>
     <main>
-      <header><div><span class="eyebrow">PROJECT FOUNDATION · ITA-02</span><h1>{{ path==='/seller'?'Seller workspace':path==='/reviewer'?'Review queue':path==='/buyer'?'Buyer review':'A clearer path to trusted invoices' }}</h1></div><button v-if="user" class="secondary" @click="logout" :disabled="busy">Sign out</button></header>
+      <header><div><span class="eyebrow">INVOICE DRAFTS · ITA-03</span><h1>{{ path==='/seller'?'Seller workspace':path==='/reviewer'?'Review queue':path==='/buyer'?'Buyer review':'A clearer path to trusted invoices' }}</h1></div><button v-if="user" class="secondary" @click="logout" :disabled="busy">Sign out</button></header>
       <div v-if="loading" class="panel" role="status">Connecting to your local backend…</div>
       <div v-if="error" class="error" role="alert">{{error}} <button @click="initialize">Retry connection</button></div>
       <template v-if="!loading">
@@ -80,15 +83,16 @@ const App = {
           <form @submit.prevent="signIn"><label for="identity">Demo identity</label><div class="inline"><select id="identity" v-model="selected" :disabled="busy"><option v-for="u in users" :key="u.id" :value="u.id">{{u.display_name}}</option></select><button :disabled="busy">{{busy?'Loading…':'Open workspace'}}</button></div></form>
         </section>
         <p v-if="user" class="identity">Signed in as <strong>{{user.display_name}}</strong> · {{user.role}}</p>
-        <section v-if="!known.includes(path)" class="panel"><h2>Page not found</h2><p>This route is not part of the starter app.</p><button @click="navigate('/')">Back to overview</button></section>
+        <section v-if="!knownPath" class="panel"><h2>Page not found</h2><p>This route is not part of the starter app.</p><button @click="navigate('/')">Back to overview</button></section>
         <section v-else-if="forbidden" class="panel"><h2>Access denied</h2><p>This workspace is unavailable to your current role. Backend endpoints enforce this restriction too.</p></section>
         <section v-else-if="requiredRole && !user" class="panel"><h2>Sign in to continue</h2><p v-if="config?.demo_mode">Choose a demo identity above to open this workspace.</p><p v-else>Demo access is disabled. Production sign-in is outside this foundation story.</p></section>
-        <section v-else-if="path==='/seller' && data" class="panel empty"><div class="empty-icon">↗</div><h2>Your workspace is ready</h2><p>No invoices yet. Invoice form and saving are the next story, ITA-03.</p><button disabled title="Planned in ITA-03">Create invoice · coming next</button></section>
+        <InvoiceDraft v-else-if="path.startsWith('/seller/invoices/')" :key="user.id+path" :api="api" :path="path" :navigate="navigate" />
+        <section v-else-if="path==='/seller' && data" class="panel"><h2>Your invoices</h2><button @click="navigate('/seller/invoices/new')">New invoice</button><p v-if="!data.invoices.length">No invoices yet. Create your first local draft.</p><div v-for="i in data.invoices" :key="i.case_id" class="invoice-line"><strong>{{i.buyer_email}}</strong><p>USD {{i.total}} · {{i.review_status}}</p><button class="secondary" @click="navigate('/seller/invoices/'+i.case_id)">Open draft</button></div></section>
         <section v-else-if="path==='/reviewer' && data" class="panel empty"><div class="empty-icon">✓</div><h2>No cases to review</h2><p>The reviewer queue and decisions are planned in ITA-11 and ITA-12.</p></section>
         <section v-else-if="path==='/buyer' && data" class="panel empty"><h2>Buyer shell only</h2><p>Private case links and email verification will be built in ITA-09. This demo role does not prove buyer agreement.</p></section>
-        <section v-else-if="path==='/'" class="overview"><div class="hero panel"><span class="pill">STARTER PROJECT</span><h2>Build the review.<br>Keep sending under control.</h2><p>The Python backend, database migrations and role-protected app shell are in place. Invoice creation, agent conversations and PayPal API calls come in the next stories.</p><div class="tags"><span>Python / FastAPI</span><span>Vue / JavaScript</span><span>Local database</span></div></div><div class="cards"><article class="panel"><h3>Seller</h3><p>Prepare invoices and answer the assistant’s questions.</p><span>Planned · ITA-03 / 04</span></article><article class="panel"><h3>Buyer</h3><p>Review exact proposed terms before the invoice is sent.</p><span>Planned · ITA-09 / 10</span></article><article class="panel"><h3>Reviewer</h3><p>Resolve concerns with evidence and cited guidance.</p><span>Planned · ITA-11 / 12</span></article></div></section>
+        <section v-else-if="path==='/'" class="overview"><div class="hero panel"><span class="pill">STARTER PROJECT</span><h2>Build the review.<br>Keep sending under control.</h2><p>Prepare and save seller-owned invoice drafts with exact totals. Agent conversations and PayPal integration come in later stories.</p><div class="tags"><span>Python / FastAPI</span><span>Vue / JavaScript</span><span>Local database</span></div></div><div class="cards"><article class="panel"><h3>Seller</h3><p>Prepare invoices and answer the assistant’s questions.</p><span>Drafts available · Agent review next</span></article><article class="panel"><h3>Buyer</h3><p>Review exact proposed terms before the invoice is sent.</p><span>Planned · ITA-09 / 10</span></article><article class="panel"><h3>Reviewer</h3><p>Resolve concerns with evidence and cited guidance.</p><span>Planned · ITA-11 / 12</span></article></div></section>
       </template>
-      <footer>Foundation only · Fake agent adapter · No PayPal calls or real payments in this starter</footer>
+      <footer>Draft preparation · Fake agent adapter · Local drafts · No PayPal calls or real payments</footer>
     </main>
   </div>`
 }
