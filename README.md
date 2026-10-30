@@ -102,7 +102,7 @@ See `docs/NEXT-STEPS.md` for ITA-03 onward.
 
 ## ITA-03 — invoice drafts
 
-After selecting a seller demo identity, click **New invoice**. Add buyer email, one or more USD line items and an optional note. Preview, go back to edit, then save. The saved draft detail can be reopened from the seller workspace or its URL. A draft is local and unsent; saving does not invoke PayPal or the agent.
+After selecting a seller demo identity, click **New invoice**. Add buyer email, one or more USD line items and an optional note. Review the live preview beside the form, edit any field, then save. The saved draft detail can be reopened from the seller workspace or its URL. A draft is local and unsent; saving does not invoke PayPal or the agent.
 
 Existing checkouts: install updated backend requirements and run `alembic upgrade head` from `backend` before starting the server. Run `npm ci` from `frontend` for the new test dependency.
 
@@ -114,3 +114,7 @@ Existing checkouts: install updated backend requirements and run `alembic upgrad
 - Frontend component tests: `cd frontend && npm test`. Backend tests: `cd backend && python -m pytest`.
 
 See `docs/ITA-03-acceptance.md` for manual QA.
+
+### Updated screen layout
+
+The UI now follows the supplied screen designs: compact top navigation, seller invoice table, side-by-side form and preview, and a saved invoice/status view. Demo account switching is inside the account menu. Restored seller sessions land directly on Invoices. Later workflow screens remain unimplemented.

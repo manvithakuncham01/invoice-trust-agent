@@ -12,14 +12,15 @@ function mount(api=async()=>({}),path='/seller/invoices/new',navigate=()=>{}){
 function input(selector,value){const el=document.querySelector(selector);el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}))}
 function valid(){input('#buyer-email','buyer@example.com');input('#name-0','Website design');input('#quantity-0','1');input('#price-0','200.00')}
 
-test('form validates, previews, edits, saves, and navigates',async()=>{
+test('side-by-side preview updates, validates, saves, and navigates',async()=>{
  let request,route;const {app}=mount(async(url,o)=>{request={url,...o};return {case_id:'case-1',version:1,items:[],total:'200.00'}},undefined,p=>{route=p})
- document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await tick();assert.match(document.body.textContent,/Enter a valid buyer email/)
- valid();document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await tick();assert.match(document.body.textContent,/Preview invoice/)
  const button=t=>[...document.querySelectorAll('button')].find(b=>b.textContent===t)
- button('Edit / Back').click();await tick();assert.equal(document.querySelector('#price-0').value,'200.00')
- document.querySelector('form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await tick();button('Save draft').click();await tick()
- assert.equal(request.url,'/api/invoices');assert.equal(JSON.parse(request.body).items[0].unit_price,'200.00');assert.ok(request.headers['Idempotency-Key']);assert.equal(route,'/seller/invoices/case-1');app.unmount()
+ button('Save draft').click();await tick();assert.match(document.body.textContent,/Enter a valid buyer email/);assert.equal(request,undefined)
+ valid();await tick();assert.match(document.querySelector('[aria-label="Invoice preview"]').textContent,/Website design/);assert.match(document.querySelector('[aria-label="Invoice preview"]').textContent,/USD 200.00/)
+ button('Edit').click();assert.equal(document.activeElement.id,'buyer-email');assert.equal(document.querySelector('#price-0').value,'200.00')
+ input('#price-0','250.00');await tick();assert.match(document.querySelector('[aria-label="Invoice preview"]').textContent,/USD 250.00/)
+ button('Save draft').click();await tick()
+ assert.equal(request.url,'/api/invoices');assert.equal(JSON.parse(request.body).items[0].unit_price,'250.00');assert.ok(request.headers['Idempotency-Key']);assert.equal(route,'/seller/invoices/case-1');app.unmount()
 })
 test('network failure preserves input and reuses save key',async()=>{
  const keys=[];const {vm,app}=mount(async(url,o)=>{keys.push(o.headers['Idempotency-Key']);throw new Error('network')});valid();await tick();vm.showPreview();await vm.save();assert.match(document.body.textContent,/Couldn’t save/);await vm.save();assert.equal(keys[0],keys[1]);vm.preview=false;await tick();assert.equal(document.querySelector('#buyer-email').value,'buyer@example.com');app.unmount()
