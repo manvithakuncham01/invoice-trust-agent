@@ -30,7 +30,7 @@ Run the setup script, then start backend and frontend using README. Existing dat
 
 ## Automated evidence
 
-35 backend test cases (existing 12 + invoice coverage) and five frontend tests. Component tests exercise validation, live preview/edit/save, failed-save retry, escaped content, exact arithmetic and reloading canonical server data. `npm run build` verifies packaging. Automated tests use fixtures; no PayPal or model credentials needed. Visual layout checks above remain manual.
+39 backend test cases (existing 12 + invoice coverage) and nine frontend tests. Component tests exercise validation, live preview/edit/save, failed-save retry, escaped content, exact arithmetic and reloading canonical server data. `npm run build` verifies packaging. Automated tests use fixtures; no PayPal or model credentials needed. Visual layout checks above remain manual.
 
 Invoice versions are append-only through the API in this story: there is no update/delete endpoint. Application code does not provide database-administrator tamper protection. Later correction stories must create a new version.
 

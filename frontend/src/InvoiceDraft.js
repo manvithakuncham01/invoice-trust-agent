@@ -5,15 +5,18 @@ export const InvoiceDraft = {
   setup(props) {
     const emptyItem = () => ({name:'', description:'', quantity:1, unit_price:''})
     const form = ref({buyer_email:'',currency:'USD',items:[emptyItem()],note:''})
-    const preview = ref(false), busy = ref(false), error = ref(''), fields = ref({}), saved = ref(null)
+    const busy = ref(false), error = ref(''), fields = ref({}), saved = ref(null)
     const operationKey = ref(crypto.randomUUID()), retryPayload = ref(null)
     const lineCents = i => {
-      if (!/^\d{1,9}(\.\d{1,2})?$/.test(i.unit_price) || !Number.isInteger(i.quantity)) return null
+      if (!/^\d{1,9}(\.\d{1,2})?$/.test(i.unit_price) || !Number.isInteger(i.quantity) || i.quantity<=0 || i.quantity>1000000 || Number(i.unit_price)<=0) return null
       const [whole, fraction=''] = i.unit_price.split('.')
       return (BigInt(whole)*100n+BigInt(fraction.padEnd(2,'0')))*BigInt(i.quantity)
     }
     const money = cents => cents===null ? '—' : `${cents/100n}.${String(cents%100n).padStart(2,'0')}`
-    const total = computed(()=>money(form.value.items.reduce((sum,i)=>sum+(lineCents(i)??0n),0n)))
+    const total = computed(()=>{
+      const amounts=form.value.items.map(lineCents)
+      return amounts.some(value=>value===null) ? '—' : money(amounts.reduce((sum,value)=>sum+value,0n))
+    })
     function validate() {
       const f = {}, v=form.value
       if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.buyer_email.trim()))f.buyer_email='Enter a valid buyer email.'
@@ -26,10 +29,9 @@ export const InvoiceDraft = {
       if(v.note.length>2000)f.note='Use 2,000 characters or fewer.'
       fields.value=f; return !Object.keys(f).length
     }
-    function showPreview(){error.value=''; if(validate())preview.value=true}
     async function save(){
       if(busy.value)return
-      if(!validate()){preview.value=false;return}
+      if(!validate())return
       const payload=JSON.stringify(form.value)
       if(retryPayload.value!==payload){operationKey.value=crypto.randomUUID();retryPayload.value=payload}
       busy.value=true; error.value=''
@@ -37,7 +39,7 @@ export const InvoiceDraft = {
         const result=await props.api('/api/invoices',{method:'POST',headers:{'Idempotency-Key':operationKey.value},body:payload})
         saved.value=result
         await props.navigate('/seller/invoices/'+result.case_id)
-      }catch(e){fields.value=e.fields||{}; if(e.status===422)preview.value=false; error.value=e.status===422?'Check the highlighted fields.':"Couldn’t save the draft. Please try again."}
+      }catch(e){fields.value=e.fields||{}; error.value=e.status===422?'Check the highlighted fields.':"Couldn’t save the draft. Please try again."}
       finally{busy.value=false}
     }
     async function load(){
@@ -50,7 +52,7 @@ export const InvoiceDraft = {
     }
     watch(()=>props.path,load); onMounted(load)
     function focusForm(){document.querySelector('#buyer-email')?.focus()}
-    return {focusForm,form,preview,busy,error,fields,saved,total,lineCents,money,showPreview,save,emptyItem}
+    return {focusForm,form,busy,error,fields,saved,total,lineCents,money,save,emptyItem}
   },
   template:`<section class="invoice-panel">
     <div v-if="error" class="error" role="alert">{{error}}</div>
@@ -67,8 +69,8 @@ export const InvoiceDraft = {
         <h2 class="section-heading">Items</h2>
         <div v-for="(item,n) in form.items" :key="n" class="item-editor">
           <div class="item-fields"><div><label :for="'name-'+n">Item name</label><input :id="'name-'+n" v-model="item.name" :aria-invalid="!!fields['items.'+n+'.name']"><p v-if="fields['items.'+n+'.name']" class="field-error">{{fields['items.'+n+'.name']}}</p></div>
-          <div><label :for="'quantity-'+n">Qty</label><input :id="'quantity-'+n" type="number" min="1" max="1000000" step="1" v-model.number="item.quantity"><p v-if="fields['items.'+n+'.quantity']" class="field-error">{{fields['items.'+n+'.quantity']}}</p></div>
-          <div><label :for="'price-'+n">Unit price (USD)</label><input :id="'price-'+n" inputmode="decimal" v-model="item.unit_price" placeholder="0.00"><p v-if="fields['items.'+n+'.unit_price']" class="field-error">{{fields['items.'+n+'.unit_price']}}</p></div>
+          <div><label :for="'quantity-'+n">Qty</label><input :aria-invalid="!!fields['items.'+n+'.quantity']" :id="'quantity-'+n" type="number" min="1" max="1000000" step="1" v-model.number="item.quantity"><p v-if="fields['items.'+n+'.quantity']" class="field-error">{{fields['items.'+n+'.quantity']}}</p></div>
+          <div><label :for="'price-'+n">Unit price (USD)</label><input :aria-invalid="!!fields['items.'+n+'.unit_price']" :id="'price-'+n" inputmode="decimal" v-model="item.unit_price" placeholder="0.00"><p v-if="fields['items.'+n+'.unit_price']" class="field-error">{{fields['items.'+n+'.unit_price']}}</p></div>
           <button class="secondary remove" type="button" :aria-label="'Remove item '+(n+1)" :disabled="form.items.length===1" @click="form.items.splice(n,1)">Remove</button></div>
           <label :for="'description-'+n">Description (optional)</label><textarea :id="'description-'+n" rows="2" v-model="item.description"></textarea><p v-if="fields['items.'+n+'.description']" class="field-error">{{fields['items.'+n+'.description']}}</p>
         </div>

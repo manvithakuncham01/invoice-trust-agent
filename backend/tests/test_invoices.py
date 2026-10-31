@@ -61,3 +61,19 @@ def test_no_edit_endpoint(runtime):
     c,_,_=runtime;t=login(c)['csrf_token'];case=post(c,t).json()['case_id']
     assert c.put('/api/invoices/'+case,json=BODY,headers={'X-CSRF-Token':t}).status_code==405
     assert c.get('/api/invoices/'+case).json()['version']==1
+
+@pytest.mark.parametrize('field,value',[('quantity',1000001),('unit_price','1000000000.00')])
+def test_item_upper_bounds(runtime,field,value):
+    c,_,_=runtime;t=login(c)['csrf_token'];b=copy.deepcopy(BODY);b['items'][0][field]=value
+    assert post(c,t,b).status_code==422
+
+def test_item_count_limit_and_unknown_case(runtime):
+    c,_,_=runtime;t=login(c)['csrf_token'];b=copy.deepcopy(BODY);b['items']=b['items']*101
+    assert post(c,t,b).status_code==422
+    assert c.get('/api/invoices/does-not-exist').status_code==404
+
+def test_valid_boundary_lengths_and_exact_large_total(runtime):
+    c,_,_=runtime;t=login(c)['csrf_token'];b=copy.deepcopy(BODY)
+    b['items'][0].update(name='x'*200,description='x'*2000,quantity=1000000,unit_price='999999999.99');b['note']='x'*2000
+    r=post(c,t,b);assert r.status_code==201,r.text
+    assert r.json()['total']=='999999999990000.00'
